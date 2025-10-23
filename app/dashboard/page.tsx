@@ -1,5 +1,7 @@
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+"use client";
+
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import {
   Card,
@@ -9,31 +11,42 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Users, Activity, TrendingUp, Clock } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ConfigurationBlock } from "@/components/dashboard/configuration-block";
 
-export default async function DashboardPage() {
-  const supabase = await createClient();
+export default function DashboardPage() {
+  const router = useRouter();
+  const supabase = createClient();
+  const [user, setUser] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [jwtToken, setJwtToken] = useState("");
+  const [baseUrl, setBaseUrl] = useState("api.yourcall.ai");
+  const [agents, setAgents] = useState<any>([]);
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
+  useEffect(() => {
+    const checkUser = async () => {
+      const {
+        data: { user },
+        error,
+      } = await supabase.auth.getUser();
 
-  if (error || !user) {
-    redirect("/login");
-  }
+      if (error || !user) {
+        router.push("/login");
+        return;
+      }
 
-  // Fetch user profile
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", user.id)
-    .single();
+      setUser(user);
+      setLoading(false);
+    };
+
+    checkUser();
+  }, [supabase, router]);
 
   const stats = [
     {
-      title: "Utilisateurs actifs",
-      value: "2,543",
-      description: "+12% par rapport au mois dernier",
+      title: "Agents",
+      value: agents.length || 0,
+      description: "Nombre d'agents",
       icon: Users,
     },
     {
@@ -56,18 +69,57 @@ export default async function DashboardPage() {
     },
   ];
 
+  const fetchData = async () => {
+    // const { data, error } = await supabase.from("data").select("*");
+    loadAgents();
+    // if (error) {
+    //   console.error(error);
+    // }
+    // console.log(data);
+  };
+
+  const loadAgents = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(`https://${baseUrl}/agents`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${jwtToken}`,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      const result = await response.json();
+      if (!result.data || !Array.isArray(result.data)) {
+        throw new Error("Invalid response format for agents");
+      }
+
+      setAgents(result.data);
+    } catch (err) {
+      console.error("[v0] Error loading agents:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <DashboardLayout userEmail={user.email || ""}>
+    <DashboardLayout userEmail={user?.email || ""}>
       <div className="flex flex-col gap-4">
         <div className="rounded-lg border bg-card p-6">
           <h2 className="text-2xl font-bold">
-            Bienvenue, {user.email?.split("@")[0]} !
+            Bienvenue, {user?.email?.split("@")[0]} !
           </h2>
-          <p className="text-muted-foreground">
-            Voici un aperçu de votre dashboard. Rôle :{" "}
-            <span className="font-medium">{profile?.role || "user"}</span>
-          </p>
         </div>
+        <ConfigurationBlock
+          jwtToken={jwtToken}
+          setJwtToken={setJwtToken}
+          baseUrl={baseUrl}
+          setBaseUrl={setBaseUrl}
+          onAnalyze={fetchData}
+          loading={loading}
+        />
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => (
@@ -126,19 +178,19 @@ export default async function DashboardPage() {
               <div className="space-y-2">
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">Email</span>
-                  <span className="text-sm font-medium">{user.email}</span>
+                  <span className="text-sm font-medium">{user?.email}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">Rôle</span>
                   <span className="text-sm font-medium">
-                    {profile?.role || "user"}
+                    {user?.role || "user"}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-sm text-muted-foreground">Créé le</span>
                   <span className="text-sm font-medium">
-                    {profile?.created_at
-                      ? new Date(profile.created_at).toLocaleDateString("fr-FR")
+                    {user?.created_at
+                      ? new Date(user?.created_at).toLocaleDateString("fr-FR")
                       : "N/A"}
                   </span>
                 </div>
